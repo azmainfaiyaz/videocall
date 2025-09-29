@@ -1,67 +1,132 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>WebRTC P2P Demo (No Server)</title>
+  <title>WebRTC Video Call (Firebase RTDB)</title>
   <style>
-    video { width: 45%; border: 1px solid #ccc; margin: 5px; }
-    textarea { width: 100%; height: 80px; }
-    button { margin: 5px; padding: 6px; }
+    video {
+      width: 45%;
+      margin: 10px;
+      border: 2px solid #333;
+      border-radius: 10px;
+    }
   </style>
 </head>
 <body>
-  <h3>WebRTC P2P Video Call (Copy-Paste Signaling)</h3>
-  <video id="localVideo" autoplay muted playsinline></video>
+  <h2>WebRTC Video Call (Firebase RTDB Signaling)</h2>
+
+  <video id="localVideo" autoplay playsinline muted></video>
   <video id="remoteVideo" autoplay playsinline></video>
 
-  <div>
-    <button onclick="createOffer()">Create Offer</button>
-    <button onclick="createAnswer()">Create Answer</button>
-    <button onclick="addAnswer()">Add Answer</button>
-  </div>
+  <br>
+  <button id="createBtn">Create Call</button>
+  <input id="callId" placeholder="Enter Call ID">
+  <button id="answerBtn">Answer Call</button>
 
-  <textarea id="offer" placeholder="Offer / Answer SDP will appear here"></textarea>
+  <!-- Firebase compat SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
   <script>
-    const localVideo = document.getElementById('localVideo');
-    const remoteVideo = document.getElementById('remoteVideo');
-    const offerBox = document.getElementById('offer');
+    // ✅ Your Firebase config
+    const firebaseConfig = {
+       apiKey: "AIzaSyAqusbmSr_8EOCwT6KjVUTabqowsdxi08Q",
+        authDomain: "video-a15df.firebaseapp.com",
+        databaseURL: "https://video-a15df-default-rtdb.firebaseio.com",
+        projectId: "video-a15df",
+        storageBucket: "video-a15df.firebasestorage.app",
+        messagingSenderId: "806053569189",
+        appId: "1:806053569189:web:e9a445a85571f7c546634c",
+        measurementId: "G-N8M15S88XL"
+    };
 
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-    });
+    // ✅ Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
 
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      .then(stream => {
-        localVideo.srcObject = stream;
-        stream.getTracks().forEach(track => pc.addTrack(track, stream));
+    const servers = { iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }] };
+    const pc = new RTCPeerConnection(servers);
+
+    const localVideo = document.getElementById("localVideo");
+    const remoteVideo = document.getElementById("remoteVideo");
+    let localStream, remoteStream;
+
+    // ✅ Media setup
+    async function initMedia() {
+      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      remoteStream = new MediaStream();
+
+      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+      pc.ontrack = event => event.streams[0].getTracks().forEach(track => remoteStream.addTrack(track));
+
+      localVideo.srcObject = localStream;
+      remoteVideo.srcObject = remoteStream;
+    }
+    initMedia();
+
+    // ✅ Create Call
+    document.getElementById("createBtn").onclick = async () => {
+      const callId = db.ref("calls").push().key;
+      document.getElementById("callId").value = callId;
+
+      const callRef = db.ref("calls/" + callId);
+
+      pc.onicecandidate = event => {
+        if (event.candidate) {
+          callRef.child("offerCandidates").push(event.candidate.toJSON());
+        }
+      };
+
+      const offerDescription = await pc.createOffer();
+      await pc.setLocalDescription(offerDescription);
+
+      await callRef.child("offer").set({
+        type: offerDescription.type,
+        sdp: offerDescription.sdp
       });
 
-    pc.ontrack = (event) => {
-      remoteVideo.srcObject = event.streams[0];
+      callRef.child("answer").on("value", snapshot => {
+        const data = snapshot.val();
+        if (data && !pc.currentRemoteDescription) {
+          pc.setRemoteDescription(new RTCSessionDescription(data));
+        }
+      });
+
+      callRef.child("answerCandidates").on("child_added", snapshot => {
+        const data = snapshot.val();
+        if (data) pc.addIceCandidate(new RTCIceCandidate(data));
+      });
     };
 
-    pc.onicecandidate = (event) => {
-      if (event.candidate) return; // Wait for gathering complete
-      offerBox.value = JSON.stringify(pc.localDescription);
+    // ✅ Answer Call
+    document.getElementById("answerBtn").onclick = async () => {
+      const callId = document.getElementById("callId").value;
+      const callRef = db.ref("calls/" + callId);
+
+      pc.onicecandidate = event => {
+        if (event.candidate) {
+          callRef.child("answerCandidates").push(event.candidate.toJSON());
+        }
+      };
+
+      const offerSnapshot = await callRef.child("offer").get();
+      const offerDescription = offerSnapshot.val();
+
+      await pc.setRemoteDescription(new RTCSessionDescription(offerDescription));
+
+      const answerDescription = await pc.createAnswer();
+      await pc.setLocalDescription(answerDescription);
+
+      await callRef.child("answer").set({
+        type: answerDescription.type,
+        sdp: answerDescription.sdp
+      });
+
+      callRef.child("offerCandidates").on("child_added", snapshot => {
+        const data = snapshot.val();
+        if (data) pc.addIceCandidate(new RTCIceCandidate(data));
+      });
     };
-
-    async function createOffer() {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-    }
-
-    async function createAnswer() {
-      const offer = JSON.parse(offerBox.value);
-      await pc.setRemoteDescription(offer);
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-    }
-
-    async function addAnswer() {
-      const answer = JSON.parse(offerBox.value);
-      await pc.setRemoteDescription(answer);
-    }
   </script>
 </body>
 </html>
