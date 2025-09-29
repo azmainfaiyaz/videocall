@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>WebRTC Video Call (Firebase RTDB)</title>
+  <title>WebRTC Video Call (Firebase RTDB + TURN)</title>
   <style>
     video {
       width: 45%;
@@ -13,7 +13,7 @@
   </style>
 </head>
 <body>
-  <h2>WebRTC Video Call (Firebase RTDB Signaling)</h2>
+  <h2>WebRTC Video Call (Firebase RTDB + STUN/TURN)</h2>
 
   <video id="localVideo" autoplay playsinline muted></video>
   <video id="remoteVideo" autoplay playsinline></video>
@@ -30,21 +30,36 @@
   <script>
     // ✅ Your Firebase config
     const firebaseConfig = {
-       apiKey: "AIzaSyAqusbmSr_8EOCwT6KjVUTabqowsdxi08Q",
-        authDomain: "video-a15df.firebaseapp.com",
-        databaseURL: "https://video-a15df-default-rtdb.firebaseio.com",
-        projectId: "video-a15df",
-        storageBucket: "video-a15df.firebasestorage.app",
-        messagingSenderId: "806053569189",
-        appId: "1:806053569189:web:e9a445a85571f7c546634c",
-        measurementId: "G-N8M15S88XL"
+      apiKey: "AIzaSyAqusbmSr_8EOCwT6KjVUTabqowsdxi08Q",
+      authDomain: "video-a15df.firebaseapp.com",
+      databaseURL: "https://video-a15df-default-rtdb.firebaseio.com",
+      projectId: "video-a15df",
+      storageBucket: "video-a15df.firebasestorage.app",
+      messagingSenderId: "806053569189",
+      appId: "1:806053569189:web:e9a445a85571f7c546634c",
+      measurementId: "G-N8M15S88XL"
     };
 
     // ✅ Initialize Firebase
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    const servers = { iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }] };
+    // ✅ Use STUN + TURN (Metered free relay)
+    const servers = {
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        {
+          urls: [
+            "turn:openrelay.metered.ca:80",
+            "turn:openrelay.metered.ca:443",
+            "turn:openrelay.metered.ca:443?transport=tcp"
+          ],
+          username: "openrelayproject",
+          credential: "openrelayproject"
+        }
+      ]
+    };
+
     const pc = new RTCPeerConnection(servers);
 
     const localVideo = document.getElementById("localVideo");
