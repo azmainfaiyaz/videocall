@@ -26,7 +26,8 @@
       padding: 8px;
       margin: 15px auto;
       background: #fff;
-      text-align: left;
+      display: flex;
+      flex-direction: column;
     }
     #chatBox div {
       margin: 5px 0;
@@ -35,16 +36,13 @@
       max-width: 70%;
       word-wrap: break-word;
     }
-    .me {
-      background: #d1ffd1;
+    .A {
+      background: #d1ffd1; /* Greenish */
       align-self: flex-end;
-      text-align: right;
-      margin-left: auto;
     }
-    .other {
-      background: #e1e1ff;
-      text-align: left;
-      margin-right: auto;
+    .B {
+      background: #d1e0ff; /* Bluish */
+      align-self: flex-start;
     }
     #chatInput {
       width: 70%;
@@ -87,7 +85,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
   <script>
-    // ✅ Your Firebase config
+    // ✅ Firebase Config
     const firebaseConfig = {
       apiKey: "AIzaSyAqusbmSr_8EOCwT6KjVUTabqowsdxi08Q",
       authDomain: "video-a15df.firebaseapp.com",
@@ -98,12 +96,10 @@
       appId: "1:806053569189:web:e9a445a85571f7c546634c",
       measurementId: "G-N8M15S88XL"
     };
-
-    // ✅ Initialize Firebase
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    // ✅ Use STUN + TURN (Metered free relay)
+    // ✅ STUN/TURN
     const pc = new RTCPeerConnection({
       iceServers: [
         { urls: "stun:stun.relay.metered.ca:80" },
@@ -134,6 +130,7 @@
     const remoteVideo = document.getElementById("remoteVideo");
     let localStream, remoteStream;
     let currentCallRef = null;
+    let myRole = null; // "A" or "B"
 
     // ✅ Media setup
     async function initMedia() {
@@ -148,11 +145,12 @@
     }
     initMedia();
 
-    // ✅ Create Call
+    // ✅ Create Call (User A)
     document.getElementById("createBtn").onclick = async () => {
       const callId = db.ref("calls").push().key;
       document.getElementById("callId").value = callId;
       currentCallRef = db.ref("calls/" + callId);
+      myRole = "A";
 
       pc.onicecandidate = event => {
         if (event.candidate) {
@@ -183,10 +181,11 @@
       initChat();
     };
 
-    // ✅ Answer Call
+    // ✅ Answer Call (User B)
     document.getElementById("answerBtn").onclick = async () => {
       const callId = document.getElementById("callId").value;
       currentCallRef = db.ref("calls/" + callId);
+      myRole = "B";
 
       pc.onicecandidate = event => {
         if (event.candidate) {
@@ -225,16 +224,8 @@
       currentCallRef.child("chat").on("child_added", snapshot => {
         const msg = snapshot.val();
         const div = document.createElement("div");
-
-        // Simple: distinguish "me" vs "other" based on whether msg starts with "me:"
-        if (msg.startsWith("me:")) {
-          div.textContent = msg.replace("me:", "");
-          div.className = "me";
-        } else {
-          div.textContent = msg.replace("other:", "");
-          div.className = "other";
-        }
-
+        div.textContent = msg.text;
+        div.className = msg.sender;
         chatBox.appendChild(div);
         chatBox.scrollTop = chatBox.scrollHeight;
       });
@@ -243,7 +234,10 @@
       sendBtn.onclick = () => {
         const msg = chatInput.value.trim();
         if (msg) {
-          currentCallRef.child("chat").push("me:" + msg);
+          currentCallRef.child("chat").push({
+            sender: myRole,
+            text: msg
+          });
           chatInput.value = "";
         }
       };
