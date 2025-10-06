@@ -1,223 +1,80 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <title>WebRTC Video Call + Chat (Firebase RTDB)</title>
+  <meta charset="UTF-8">
+  <title>WebRTC Chat with Custom or Random Call ID</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #f4f4f4;
-      text-align: center;
-      padding: 20px;
+    body { font-family: Arial, sans-serif; text-align: center; background: #f9f9f9; }
+    #videos { display: flex; justify-content: center; margin: 10px; }
+    video { width: 300px; margin: 5px; border: 2px solid #333; border-radius: 10px; background: black; }
+    #controls { margin: 10px; }
+    #chatBox { 
+      width: 400px; height: 200px; border: 1px solid #ccc; 
+      overflow-y: auto; margin: 10px auto; padding: 10px; background: #fff; text-align: left;
     }
-    video {
-      width: 45%;
-      margin: 10px;
-      border: 2px solid #333;
-      border-radius: 10px;
-      background: black;
-    }
-    #chatBox {
-      width: 90%;
-      height: 200px;
-      border: 1px solid #333;
-      border-radius: 8px;
-      overflow-y: auto;
-      padding: 8px;
-      margin: 15px auto;
-      background: #fff;
-      text-align: left;
-    }
-    #chatBox div {
-      margin: 5px 0;
-      padding: 6px 10px;
-      border-radius: 6px;
-      max-width: 70%;
-      word-wrap: break-word;
-    }
-    .me {
-      background: #d1ffd1;
-      text-align: right;
-      margin-left: auto;
-    }
-    .other {
-      background: #e1e1ff;
-      text-align: left;
-      margin-right: auto;
-    }
-    #chatInput {
-      width: 70%;
-      padding: 8px;
-      margin-right: 5px;
-      border-radius: 6px;
-      border: 1px solid #ccc;
-    }
-    #sendBtn {
-      padding: 8px 12px;
-      border: none;
-      border-radius: 6px;
-      background: #333;
-      color: white;
-      cursor: pointer;
-    }
-    #sendBtn:hover {
-      background: #555;
-    }
+    .me { color: green; margin: 5px 0; text-align: right; }
+    .other { color: blue; margin: 5px 0; text-align: left; }
+    #chatInput { width: 300px; padding: 5px; }
   </style>
 </head>
 <body>
-  <h2>WebRTC Video Call + Chat (Firebase RTDB + STUN/TURN)</h2>
+  <h2>WebRTC Video Chat</h2>
+  <div id="videos">
+    <video id="localVideo" autoplay muted></video>
+    <video id="remoteVideo" autoplay></video>
+  </div>
 
-  <video id="localVideo" autoplay playsinline muted></video>
-  <video id="remoteVideo" autoplay playsinline></video>
+  <div id="controls">
+    <input type="text" id="callId" placeholder="Enter Call ID (or leave blank)">
+    <button id="createBtn">Create Call</button>
+    <button id="answerBtn">Answer Call</button>
+  </div>
 
-  <br>
-  <button id="createBtn">Create Call</button>
-  <input id="callId" placeholder="Enter Call ID">
-  <button id="answerBtn">Answer Call</button>
-
-  <h3>Chat</h3>
   <div id="chatBox"></div>
-  <input id="chatInput" placeholder="Type a message...">
+  <input type="text" id="chatInput" placeholder="Type a message">
   <button id="sendBtn">Send</button>
 
-  <!-- Firebase compat SDK -->
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
   <script>
-    // ✅ Your Firebase config
+    // ✅ Replace with your Firebase config
     const firebaseConfig = {
-      apiKey: "AIzaSyAqusbmSr_8EOCwT6KjVUTabqowsdxi08Q",
-      authDomain: "video-a15df.firebaseapp.com",
-      databaseURL: "https://video-a15df-default-rtdb.firebaseio.com",
-      projectId: "video-a15df",
-      storageBucket: "video-a15df.firebasestorage.app",
-      messagingSenderId: "806053569189",
-      appId: "1:806053569189:web:e9a445a85571f7c546634c",
-      measurementId: "G-N8M15S88XL"
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT.firebaseapp.com",
+      databaseURL: "https://YOUR_PROJECT.firebaseio.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
     };
-
-    // ✅ Initialize Firebase
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
+  </script>
 
-    // ✅ Use STUN + TURN (Metered free relay)
-    const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: "stun:stun.relay.metered.ca:80" },
-        {
-          urls: "turn:global.relay.metered.ca:80",
-          username: "ffa604f96ab2ed1a058c3d67",
-          credential: "NnV8tipDjdKKg+Sz",
-        },
-        {
-          urls: "turn:global.relay.metered.ca:80?transport=tcp",
-          username: "ffa604f96ab2ed1a058c3d67",
-          credential: "NnV8tipDjdKKg+Sz",
-        },
-        {
-          urls: "turn:global.relay.metered.ca:443",
-          username: "ffa604f96ab2ed1a058c3d67",
-          credential: "NnV8tipDjdKKg+Sz",
-        },
-        {
-          urls: "turns:global.relay.metered.ca:443?transport=tcp",
-          username: "ffa604f96ab2ed1a058c3d67",
-          credential: "NnV8tipDjdKKg+Sz",
-        },
-      ]
-    });
+  <script>
+    const config = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+    let localStream, remoteStream, currentCallRef, role = null;
 
     const localVideo = document.getElementById("localVideo");
     const remoteVideo = document.getElementById("remoteVideo");
-    let localStream, remoteStream;
-    let currentCallRef = null;
-    let role = null; // "me" or "other"
 
-    // ✅ Media setup
     async function initMedia() {
       localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      remoteStream = new MediaStream();
-
-      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-      pc.ontrack = event => event.streams[0].getTracks().forEach(track => remoteStream.addTrack(track));
-
       localVideo.srcObject = localStream;
+      remoteStream = new MediaStream();
       remoteVideo.srcObject = remoteStream;
     }
     initMedia();
 
-    // ✅ Create Call
-    document.getElementById("createBtn").onclick = async () => {
-      role = "me"; // creator is "me"
-      const callId = db.ref("calls").push().key;
-      document.getElementById("callId").value = callId;
-      currentCallRef = db.ref("calls/" + callId);
-
+    function setupPC(pc, callRef) {
       pc.onicecandidate = event => {
-        if (event.candidate) {
-          currentCallRef.child("offerCandidates").push(event.candidate.toJSON());
-        }
+        if (event.candidate) callRef.child("candidates").push(JSON.stringify(event.candidate));
       };
+      pc.ontrack = event => event.streams[0].getTracks().forEach(t => remoteStream.addTrack(t));
+    }
 
-      const offerDescription = await pc.createOffer();
-      await pc.setLocalDescription(offerDescription);
-
-      await currentCallRef.child("offer").set({
-        type: offerDescription.type,
-        sdp: offerDescription.sdp
-      });
-
-      currentCallRef.child("answer").on("value", snapshot => {
-        const data = snapshot.val();
-        if (data && !pc.currentRemoteDescription) {
-          pc.setRemoteDescription(new RTCSessionDescription(data));
-        }
-      });
-
-      currentCallRef.child("answerCandidates").on("child_added", snapshot => {
-        const data = snapshot.val();
-        if (data) pc.addIceCandidate(new RTCIceCandidate(data));
-      });
-
-      initChat();
-    };
-
-    // ✅ Answer Call
-    document.getElementById("answerBtn").onclick = async () => {
-      role = "other"; // answerer is "other"
-      const callId = document.getElementById("callId").value;
-      currentCallRef = db.ref("calls/" + callId);
-
-      pc.onicecandidate = event => {
-        if (event.candidate) {
-          currentCallRef.child("answerCandidates").push(event.candidate.toJSON());
-        }
-      };
-
-      const offerSnapshot = await currentCallRef.child("offer").get();
-      const offerDescription = offerSnapshot.val();
-
-      await pc.setRemoteDescription(new RTCSessionDescription(offerDescription));
-
-      const answerDescription = await pc.createAnswer();
-      await pc.setLocalDescription(answerDescription);
-
-      await currentCallRef.child("answer").set({
-        type: answerDescription.type,
-        sdp: answerDescription.sdp
-      });
-
-      currentCallRef.child("offerCandidates").on("child_added", snapshot => {
-        const data = snapshot.val();
-        if (data) pc.addIceCandidate(new RTCIceCandidate(data));
-      });
-
-      initChat();
-    };
-
-    // ✅ Chat Logic
+    // ✅ Chat system
     function initChat() {
       const chatBox = document.getElementById("chatBox");
       const chatInput = document.getElementById("chatInput");
@@ -226,9 +83,7 @@
       // Listen for new messages
       currentCallRef.child("chat").on("child_added", snapshot => {
         const msgData = snapshot.val();
-        if (!msgData) return;
         const div = document.createElement("div");
-
         if (msgData.role === role) {
           div.textContent = msgData.text;
           div.className = "me";
@@ -236,7 +91,6 @@
           div.textContent = msgData.text;
           div.className = "other";
         }
-
         chatBox.appendChild(div);
         chatBox.scrollTop = chatBox.scrollHeight;
       });
@@ -245,10 +99,7 @@
       sendBtn.onclick = () => {
         const msg = chatInput.value.trim();
         if (msg) {
-          currentCallRef.child("chat").push({
-            role: role,
-            text: msg
-          });
+          currentCallRef.child("chat").push({ role: role, text: msg });
           chatInput.value = "";
         }
       };
@@ -258,6 +109,78 @@
         if (e.key === "Enter") sendBtn.click();
       });
     }
+
+    // ✅ Create Call
+    document.getElementById("createBtn").onclick = async () => {
+      role = "me";
+
+      let callIdInput = document.getElementById("callId").value.trim();
+      let callRef;
+
+      if (callIdInput) {
+        // custom call ID
+        callRef = db.ref("calls").child(callIdInput);
+        await callRef.set({});
+      } else {
+        // random ID
+        callRef = db.ref("calls").push();
+        document.getElementById("callId").value = callRef.key;
+      }
+
+      currentCallRef = callRef;
+      const pc = new RTCPeerConnection(config);
+      setupPC(pc, callRef);
+
+      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      callRef.child("offer").set(JSON.stringify(offer));
+
+      callRef.child("answer").on("value", async snap => {
+        if (snap.val() && !pc.currentRemoteDescription) {
+          await pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(snap.val())));
+        }
+      });
+
+      callRef.child("candidates").on("child_added", async snap => {
+        const candidate = new RTCIceCandidate(JSON.parse(snap.val()));
+        try { await pc.addIceCandidate(candidate); } catch (e) {}
+      });
+
+      initChat();
+    };
+
+    // ✅ Answer Call
+    document.getElementById("answerBtn").onclick = async () => {
+      role = "other";
+
+      const callId = document.getElementById("callId").value.trim();
+      if (!callId) return alert("Enter Call ID to answer");
+
+      const callRef = db.ref("calls").child(callId);
+      currentCallRef = callRef;
+
+      const pc = new RTCPeerConnection(config);
+      setupPC(pc, callRef);
+
+      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+      const offerSnap = await callRef.child("offer").once("value");
+      if (offerSnap.val()) {
+        await pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(offerSnap.val())));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        callRef.child("answer").set(JSON.stringify(answer));
+      }
+
+      callRef.child("candidates").on("child_added", async snap => {
+        const candidate = new RTCIceCandidate(JSON.parse(snap.val()));
+        try { await pc.addIceCandidate(candidate); } catch (e) {}
+      });
+
+      initChat();
+    };
   </script>
 </body>
 </html>
