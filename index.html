@@ -56,7 +56,32 @@
     const db = firebase.database();
 
     // 🔹 STUN/TURN servers
-    const pcConfig = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        // { urls: "stun:stun.relay.metered.ca:80" },
+        {
+          urls: "turn:global.relay.metered.ca:80",
+          username: "ffa604f96ab2ed1a058c3d67",
+          credential: "NnV8tipDjdKKg+Sz",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:80?transport=tcp",
+          username: "ffa604f96ab2ed1a058c3d67",
+          credential: "NnV8tipDjdKKg+Sz",
+        },
+        {
+          urls: "turn:global.relay.metered.ca:443",
+          username: "ffa604f96ab2ed1a058c3d67",
+          credential: "NnV8tipDjdKKg+Sz",
+        },
+        {
+          urls: "turns:global.relay.metered.ca:443?transport=tcp",
+          username: "ffa604f96ab2ed1a058c3d67",
+          credential: "NnV8tipDjdKKg+Sz",
+        },
+      ]
+    });
 
     let localStream, remoteStream, currentCallRef, role = null;
     const localVideo = document.getElementById("localVideo");
