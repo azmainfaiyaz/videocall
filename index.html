@@ -2,18 +2,72 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>WebRTC Video Call (Firebase RTDB + TURN)</title>
+  <title>WebRTC Video Call + Chat (Firebase RTDB)</title>
   <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f4;
+      text-align: center;
+      padding: 20px;
+    }
     video {
       width: 45%;
       margin: 10px;
       border: 2px solid #333;
       border-radius: 10px;
+      background: black;
+    }
+    #chatBox {
+      width: 90%;
+      height: 200px;
+      border: 1px solid #333;
+      border-radius: 8px;
+      overflow-y: auto;
+      padding: 8px;
+      margin: 15px auto;
+      background: #fff;
+      text-align: left;
+    }
+    #chatBox div {
+      margin: 5px 0;
+      padding: 6px 10px;
+      border-radius: 6px;
+      max-width: 70%;
+      word-wrap: break-word;
+    }
+    .me {
+      background: #d1ffd1;
+      align-self: flex-end;
+      text-align: right;
+      margin-left: auto;
+    }
+    .other {
+      background: #e1e1ff;
+      text-align: left;
+      margin-right: auto;
+    }
+    #chatInput {
+      width: 70%;
+      padding: 8px;
+      margin-right: 5px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+    }
+    #sendBtn {
+      padding: 8px 12px;
+      border: none;
+      border-radius: 6px;
+      background: #333;
+      color: white;
+      cursor: pointer;
+    }
+    #sendBtn:hover {
+      background: #555;
     }
   </style>
 </head>
 <body>
-  <h2>WebRTC Video Call (Firebase RTDB + STUN/TURN)</h2>
+  <h2>WebRTC Video Call + Chat (Firebase RTDB + STUN/TURN)</h2>
 
   <video id="localVideo" autoplay playsinline muted></video>
   <video id="remoteVideo" autoplay playsinline></video>
@@ -22,6 +76,11 @@
   <button id="createBtn">Create Call</button>
   <input id="callId" placeholder="Enter Call ID">
   <button id="answerBtn">Answer Call</button>
+
+  <h3>Chat</h3>
+  <div id="chatBox"></div>
+  <input id="chatInput" placeholder="Type a message...">
+  <button id="sendBtn">Send</button>
 
   <!-- Firebase compat SDK -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -45,7 +104,6 @@
     const db = firebase.database();
 
     // ✅ Use STUN + TURN (Metered free relay)
-    // { urls: "stun:stun.l.google.com:19302" }
     const pc = new RTCPeerConnection({
       iceServers: [
         { urls: "stun:stun.relay.metered.ca:80" },
@@ -75,6 +133,7 @@
     const localVideo = document.getElementById("localVideo");
     const remoteVideo = document.getElementById("remoteVideo");
     let localStream, remoteStream;
+    let currentCallRef = null;
 
     // ✅ Media setup
     async function initMedia() {
@@ -93,48 +152,49 @@
     document.getElementById("createBtn").onclick = async () => {
       const callId = db.ref("calls").push().key;
       document.getElementById("callId").value = callId;
-
-      const callRef = db.ref("calls/" + callId);
+      currentCallRef = db.ref("calls/" + callId);
 
       pc.onicecandidate = event => {
         if (event.candidate) {
-          callRef.child("offerCandidates").push(event.candidate.toJSON());
+          currentCallRef.child("offerCandidates").push(event.candidate.toJSON());
         }
       };
 
       const offerDescription = await pc.createOffer();
       await pc.setLocalDescription(offerDescription);
 
-      await callRef.child("offer").set({
+      await currentCallRef.child("offer").set({
         type: offerDescription.type,
         sdp: offerDescription.sdp
       });
 
-      callRef.child("answer").on("value", snapshot => {
+      currentCallRef.child("answer").on("value", snapshot => {
         const data = snapshot.val();
         if (data && !pc.currentRemoteDescription) {
           pc.setRemoteDescription(new RTCSessionDescription(data));
         }
       });
 
-      callRef.child("answerCandidates").on("child_added", snapshot => {
+      currentCallRef.child("answerCandidates").on("child_added", snapshot => {
         const data = snapshot.val();
         if (data) pc.addIceCandidate(new RTCIceCandidate(data));
       });
+
+      initChat();
     };
 
     // ✅ Answer Call
     document.getElementById("answerBtn").onclick = async () => {
       const callId = document.getElementById("callId").value;
-      const callRef = db.ref("calls/" + callId);
+      currentCallRef = db.ref("calls/" + callId);
 
       pc.onicecandidate = event => {
         if (event.candidate) {
-          callRef.child("answerCandidates").push(event.candidate.toJSON());
+          currentCallRef.child("answerCandidates").push(event.candidate.toJSON());
         }
       };
 
-      const offerSnapshot = await callRef.child("offer").get();
+      const offerSnapshot = await currentCallRef.child("offer").get();
       const offerDescription = offerSnapshot.val();
 
       await pc.setRemoteDescription(new RTCSessionDescription(offerDescription));
@@ -142,16 +202,57 @@
       const answerDescription = await pc.createAnswer();
       await pc.setLocalDescription(answerDescription);
 
-      await callRef.child("answer").set({
+      await currentCallRef.child("answer").set({
         type: answerDescription.type,
         sdp: answerDescription.sdp
       });
 
-      callRef.child("offerCandidates").on("child_added", snapshot => {
+      currentCallRef.child("offerCandidates").on("child_added", snapshot => {
         const data = snapshot.val();
         if (data) pc.addIceCandidate(new RTCIceCandidate(data));
       });
+
+      initChat();
     };
+
+    // ✅ Chat Logic
+    function initChat() {
+      const chatBox = document.getElementById("chatBox");
+      const chatInput = document.getElementById("chatInput");
+      const sendBtn = document.getElementById("sendBtn");
+
+      // Listen for new messages
+      currentCallRef.child("chat").on("child_added", snapshot => {
+        const msg = snapshot.val();
+        const div = document.createElement("div");
+
+        // Simple: distinguish "me" vs "other" based on whether msg starts with "me:"
+        if (msg.startsWith("me:")) {
+          div.textContent = msg.replace("me:", "");
+          div.className = "me";
+        } else {
+          div.textContent = msg.replace("other:", "");
+          div.className = "other";
+        }
+
+        chatBox.appendChild(div);
+        chatBox.scrollTop = chatBox.scrollHeight;
+      });
+
+      // Send message
+      sendBtn.onclick = () => {
+        const msg = chatInput.value.trim();
+        if (msg) {
+          currentCallRef.child("chat").push("me:" + msg);
+          chatInput.value = "";
+        }
+      };
+
+      // Send on Enter key
+      chatInput.addEventListener("keypress", e => {
+        if (e.key === "Enter") sendBtn.click();
+      });
+    }
   </script>
 </body>
 </html>
