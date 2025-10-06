@@ -56,7 +56,7 @@
     const db = firebase.database();
 
     // 🔹 STUN/TURN servers
-    const pc = new RTCPeerConnection({
+    const pcConfig = {
       iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
         // { urls: "stun:stun.relay.metered.ca:80" },
@@ -81,7 +81,7 @@
           credential: "NnV8tipDjdKKg+Sz",
         },
       ]
-    });
+    };
 
     let localStream, remoteStream, currentCallRef, role = null;
     const localVideo = document.getElementById("localVideo");
